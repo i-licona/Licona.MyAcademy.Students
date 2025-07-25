@@ -1,14 +1,14 @@
-﻿
-using Licona.MyAcademy.Students.Worker.Tasks;
+﻿using Licona.MyAcademy.Students.Worker.Tasks;
 
 namespace Licona.MyAcademy.Students.Worker.Service;
 
 public class KafkaConsumerService(
-    KafkaConsumerCreatedTask _consumerCreatedTask        
+    KafkaConsumerCreatedTask consumerCreatedTask
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await _consumerCreatedTask.ConsumeEvent(stoppingToken);
+        await consumerCreatedTask.ConsumeEvent(stoppingToken);
     }
 }
+        

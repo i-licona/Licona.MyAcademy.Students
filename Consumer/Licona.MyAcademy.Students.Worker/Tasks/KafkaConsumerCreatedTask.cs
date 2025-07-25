@@ -9,34 +9,70 @@ using Licona.MyAcademy.Students.Domain.Ports.Repositories;
 namespace Licona.MyAcademy.Students.Worker.Tasks;
 
 public class KafkaConsumerCreatedTask(
-    IOptions<KafkaSettings> _kafkaSettings,
-    IDatabaseRepository<Student> _repository
+    IOptions<KafkaSettings> kafkaSettings,
+    IDatabaseRepository<Student> repository,
+    ILogger<KafkaConsumerCreatedTask> logger
 )
 {
+    private readonly ConsumerConfig _config = new()
+    {
+        GroupId = kafkaSettings.Value.GroupId,
+        BootstrapServers = $"{kafkaSettings.Value.Hostname}:{kafkaSettings.Value.Port}",
+        AutoOffsetReset = AutoOffsetReset.Earliest,
+        EnableAutoCommit = false
+    };
+
+    private readonly string _topic = nameof(CreateStudentEvent);
+
     public async Task ConsumeEvent(CancellationToken cancellationToken)
     {
-        var config = new ConsumerConfig
+        using var consumer = new ConsumerBuilder<Ignore, string>(_config).Build();
+        consumer.Subscribe(_topic);
+        logger.LogInformation("Kafka consumer subscribed to topic: {Topic}", _topic);
+
+        try
         {
-            GroupId = _kafkaSettings.Value.GroupId,
-            BootstrapServers = $"{_kafkaSettings.Value.Hostname}:{_kafkaSettings.Value.Port}",
-            AutoOffsetReset = AutoOffsetReset.Earliest
-        };
-        string topic = nameof(CreateStudentEvent);
-        using var consumer = new ConsumerBuilder<Ignore, string>(config).Build();
-        consumer.Subscribe(topic);
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                var cr = consumer.Consume(cancellationToken);
-                var data = JsonConvert.DeserializeObject<CreateStudentEvent>(cr.Message.Value);
-                await _repository.Create(data.Event);
-            }
-            catch (Exception)
-            {
-                throw;
+                ConsumeResult<Ignore, string>? cr = null;
+                try
+                {
+                    cr = consumer.Consume(cancellationToken);
+                    logger.LogInformation("Message consumed: {Message}", cr.Message.Value);
+
+                    var eventData = JsonConvert.DeserializeObject<CreateStudentEvent>(cr.Message.Value);
+
+                    if (eventData?.Event == null)
+                    {
+                        logger.LogWarning("Received null or invalid event data: {Raw}", cr.Message.Value);
+                        continue;
+                    }
+
+                    await repository.Create(eventData.Event);
+                    logger.LogInformation("Student created successfully with ID: {Id}", eventData.Event.Id);
+
+                    consumer.Commit(cr); // Commit offset only on success
+                }
+                catch (JsonException jsonEx)
+                {
+                    logger.LogError(jsonEx, "Failed to deserialize message: {Raw}", cr?.Message.Value);
+                }
+                catch (OperationCanceledException)
+                {
+                    logger.LogWarning("Kafka consumer task cancelled");
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error processing message");
+                    // Decide here if you want to continue or break (could poison the queue).
+                }
             }
         }
-
+        finally
+        {
+            consumer.Close();
+            logger.LogInformation("Kafka consumer closed gracefully.");
+        }
     }
 }

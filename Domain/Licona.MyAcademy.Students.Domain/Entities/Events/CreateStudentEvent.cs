@@ -6,4 +6,7 @@ public record CreateStudentEvent(
 Guid Id,
 DateTime OccurredOn,
 Student Event
-) : EventBase<Student>(Id, OccurredOn, Event);
+) : IEventBase
+{
+    object IEventBase.Event => Event;
+}
