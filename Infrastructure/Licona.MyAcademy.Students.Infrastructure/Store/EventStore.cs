@@ -20,7 +20,7 @@ public class EventStore(
 
         var doc = new BsonDocument
         {
-            { "Id", @event.Id },
+            { "Id", @event.Id.ToString() },
             { "occurredOn", @event.OccurredOn },
             { "eventType", @event.GetType().Name },
             { "payload", BsonDocument.Parse(JsonConvert.SerializeObject(@event.Event)) }
